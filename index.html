@@ -89,6 +89,8 @@
       crash()  { tone(120, 0.35, 'sawtooth', 0.18, 40); setTimeout(() => tone(60, 0.3, 'square', 0.1, 30), 80); },
       pickup() { tone(880, 0.08, 'sine', 0.1); setTimeout(() => tone(1320, 0.1, 'sine', 0.08), 60); },
       level()  { tone(660, 0.1, 'triangle', 0.08); setTimeout(() => tone(990, 0.15, 'triangle', 0.08), 100); },
+      shoot()  { tone(1200, 0.04, 'square', 0.04); },
+      explode(){ tone(180, 0.08, 'sawtooth', 0.10, 60); },
     };
   })();
 
@@ -218,6 +220,22 @@
     obstacles.push(o);
   }
 
+  // ========== Bullets ==========
+  const bullets = [];
+  const BULLET_SPEED = 10;
+  const BULLET_FIRE_INTERVAL = 9;   // frames between shots (~6 shots/sec at 60fps)
+  let fireTimer = 0;
+
+  function spawnBullet() {
+    bullets.push({
+      x: player.x,
+      y: player.y - 20,        // emerge from plane nose
+      w: 4, h: 10,
+      alive: true,
+    });
+    Audio.shoot();
+  }
+
   // ========== Power-ups ==========
   const powerups = [];
   function maybeSpawnPowerup(x, y) {
@@ -284,6 +302,8 @@
       obstacles.length = 0;
       powerups.length = 0;
       particles.length = 0;
+      bullets.length = 0;
+      fireTimer = 0;
       resetPlayer();
     },
 
@@ -366,6 +386,15 @@
     const speedMul = game.slowMo > 0 ? 0.45 : 1;
     if (game.slowMo > 0) game.slowMo--;
 
+    // Auto-fire bullets
+    if (player.alive) {
+      fireTimer++;
+      if (fireTimer >= BULLET_FIRE_INTERVAL) {
+        fireTimer = 0;
+        spawnBullet();
+      }
+    }
+
     // Update obstacles
     for (let i = obstacles.length - 1; i >= 0; i--) {
       const o = obstacles[i];
@@ -377,6 +406,37 @@
       if (o.y > H + 40) { o.alive = false; obstacles.splice(i, 1); continue; }
       // bounce off walls
       if (o.x < o.w/2 || o.x > W - o.w/2) o.vx *= -1;
+    }
+
+    // Update bullets
+    for (let i = bullets.length - 1; i >= 0; i--) {
+      const b = bullets[i];
+      b.y -= BULLET_SPEED;
+      if (b.y < -20) { bullets.splice(i, 1); continue; }
+    }
+
+    // Bullet vs obstacle collisions
+    for (let i = bullets.length - 1; i >= 0; i--) {
+      const b = bullets[i];
+      let hit = false;
+      for (let j = obstacles.length - 1; j >= 0; j--) {
+        const o = obstacles[j];
+        if (!o.alive) continue;
+        if (aabbHit(b.x, b.y, b.w, b.h, o.x, o.y, o.w * 0.85, o.h * 0.85)) {
+          // Destroy obstacle
+          o.alive = false;
+          obstacles.splice(j, 1);
+          game.score += o.score;
+          burst(o.x, o.y, 12, 3, o.kind === 'meteor' ? ['#aa6633','#ffaa55','#ffffff']
+                              : o.kind === 'enemy'  ? ['#cc2244','#ff8899','#ffffff']
+                                                    : ['#55aaff','#aaccff','#ffffff']);
+          Audio.explode();
+          maybeSpawnPowerup(o.x, o.y);
+          hit = true;
+          break;
+        }
+      }
+      if (hit) bullets.splice(i, 1);
     }
 
     // Update powerups
@@ -470,6 +530,7 @@
     drawStars();
     drawPowerups();
     drawObstacles();
+    drawBullets();
     drawParticles();
     if (player.alive || player.invincible > 0) drawPlayer();
     drawHUD();
@@ -692,6 +753,24 @@
       }
 
       ctx.restore();
+    }
+  }
+
+  function drawBullets() {
+    for (const b of bullets) {
+      // Outer glow
+      ctx.fillStyle = 'rgba(255, 220, 100, 0.4)';
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+      // Core
+      ctx.fillStyle = '#ffee88';
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      // Hot tip
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(b.x - 1, b.y - 4, 2, 4);
     }
   }
 
